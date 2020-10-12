@@ -203,9 +203,14 @@ class sfdaTrainer(Trainer):
                     logits = outputs.logits
 #                     print(outputs.last_hidden_state.shape)
                     feats = outputs.last_hidden_state[:,0,:].detach()
+                    labels = None
                     if has_labels:
                         # The .mean() is to reduce in case of distributed training
                         loss = loss.mean().item()
+                        labels = tuple(inputs.get(name).detach() for name in self.args.label_names)
+                        if len(labels) == 1:
+                            labels = labels[0]
+                    return (loss, logits, labels, feats)
                 else:
                     feats = None
                     outputs = model(**inputs)
