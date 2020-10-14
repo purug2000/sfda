@@ -3,6 +3,7 @@ from transformers.modeling_roberta import RobertaPreTrainedModel,RobertaModel,Ro
 from typing import NamedTuple, Union,Tuple,Optional,Dict
 import torch
 
+from torch.nn import CrossEntropyLoss
 
 
 from transformers.configuration_utils import PretrainedConfig
@@ -22,11 +23,12 @@ from torch import nn
 import re
 import os
 import logging
+from .utils import ComputeSimilarity
 
 logger = logging.getLogger(__name__)
 
 class sfdaNegationClassifierOutput(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
+    loss: Optional[Union[torch.FloatTensor,list]] = None
     logits: torch.FloatTensor = None
     hidden_states: Optional[Tuple[torch.FloatTensor]] = None
     attentions: Optional[Tuple[torch.FloatTensor]] = None
@@ -102,17 +104,7 @@ class sfdaSourceRobertaNegation(RobertaPreTrainedModel):
             attentions=outputs.attentions,
             last_hidden_state = outputs[0]
         )
-    
-    
-    
-
-class sfdaNegationClassifierOutput(ModelOutput):
-    loss: Optional[torch.FloatTensor] = None
-    logits: torch.FloatTensor = None
-    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
-    attentions: Optional[Tuple[torch.FloatTensor]] = None
-    last_hidden_state: Optional[Tuple[torch.FloatTensor]] = None
-        
+       
         
 class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
     authorized_missing_keys = [r"position_ids"]
@@ -315,9 +307,8 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
                     key.split(cls.base_model_prefix + ".")[-1] for key in model.state_dict().keys()
                 ]
                 missing_keys.extend(head_model_state_dict_without_base_prefix - base_model_state_dict)
-#                 print("Something")
 
-            # Some models may have keys that are not in the state by design, removing them before needlessly warning
+                # Some models may have keys that are not in the state by design, removing them before needlessly warning
             # the user.
             if cls.authorized_missing_keys is not None:
                 for pat in cls.authorized_missing_keys:
@@ -361,6 +352,41 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
             model.to(xm.xla_device())
 
         return model
+    ####################################################################################
+    ####################################################################################
+    def compute_plabel_and_conf(self,prototype_p,prototype_f,inp_feats):
+        
+        #compute similarity scores between prototypes and batch tensors
+        sim_mat_p = ComputeSimilarity(prototype_p,inp_feats)
+        sim_mat_f = ComputeSimilarity(prototype_f,inp_feats)
+        
+        
+        #compute class similarity scores for batch tensors
+        sim_p = torch.mean(sim_mat_p,1)
+        sim_f = torch.mean(sim_mat_f,1)
+        
+        #Find pseudo labels
+        p_label  = torch.where(sim_p<sim_f, torch.zeros_like(sim_p , dtype =  torch.long ),torch.ones_like(sim_p , dtype =  torch.long ))
+        
+        #finding max similarity from each prototype class 
+        max_p,_ =  torch.max(sim_mat_p,axis = 1)
+        max_f,_ =  torch.max(sim_mat_f,axis = 1)
+        
+        #finding min similarity from each prototype class 
+        min_p,_ =  torch.min(sim_mat_p,axis = 1)
+        min_f,_ =  torch.min(sim_mat_f,axis = 1)
+        
+        #finding max and min similarity from close and far classes respectively
+        min_sim_from_close_class =  torch.where(p_label == 1,min_p,min_f )
+        max_sim_from_far_class =  torch.where(p_label == 1,max_f,max_p )
+        
+        conf_mask =  (min_sim_from_close_class > max_sim_from_far_class)
+        return p_label, conf_mask
+    ####################################################################################
+    ####################################################################################
+       
+        
+        
     def forward(
         self,
         input_ids=None,
@@ -369,10 +395,12 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
         position_ids=None,
         head_mask=None,
         inputs_embeds=None,
-        labels=None,
+        labels = None,
+        prototype_p =None,
+        prototype_f =None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
+        return_dict=True,
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -396,27 +424,58 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+        
+        
+        ###############################################################################
+        ##############################################################################
+        
+        
         sequence_output = outputs[0]
-        logits = self.classifier_s2t(sequence_output)
+        logits_t = self.classifier_t(sequence_output) #logits of the target classifier
+        logits_s2t = self.classifier_s2t(sequence_output) #logits of s2t classifier for maintaining sanity
 
         loss = None
-        if labels is not None:
-            if self.num_labels == 1:
-                #  We are doing regression
-                loss_fct = MSELoss()
-                loss = loss_fct(logits.view(-1), labels.view(-1))
-            else:
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
+                    
+        if prototype_p is not None: 
+            t_labels,conf_mask = self.compute_plabel_and_conf(prototype_p,prototype_f,outputs[0][:,0,:])
+            if labels is not None:
+                if self.num_labels == 1:
+                    #  I fWe are doing regression
+                    loss_fct = MSELoss()
+                    s2t_loss = loss_fct(logits.view(-1), s_labels.view(-1))
+                else:
+                    loss_fct = CrossEntropyLoss()
+                    s2t_loss = loss_fct(logits_s2t.view(-1, self.num_labels), labels.view(-1))
+            if t_labels is not None:
+#                 if conf_mask is None:
+                if self.num_labels == 1:
+                    # If  We are doing regression
+                    loss_fct = MSELoss()
+                    t_loss = loss_fct(logits_t.view(-1), t_labels.view(-1))
+                else:
+                    loss_fct = CrossEntropyLoss(reduction = 'none')
+                    t_loss = loss_fct(logits_s2t.view(-1, self.num_labels), t_labels.view(-1))
+                    t_loss =  torch.mean(t_loss*conf_mask,dim =0, keepdim = False) ## Consider only High Confidence points
+                loss = [s2t_loss,t_loss] # returs both s2tloss and t_loss
+        else:
+            if labels is not None:
+                if self.num_labels == 1:
+                    #  We are doing regression
+                    loss_fct = MSELoss()
+                    t_loss = loss_fct(logits.view(-1), s_labels.view(-1))
+                else:
+                    loss_fct = CrossEntropyLoss()
+                    t_loss = loss_fct(logits_t.view(-1, self.num_labels), labels.view(-1))
+                loss = t_loss
+                
         return sfdaNegationClassifierOutput(
             loss=loss,
-            logits=logits,
+            logits=logits_t,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
             last_hidden_state = outputs[0]
         )
+
+    
+    ########################################################################################
+    ########################################################################################

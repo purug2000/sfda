@@ -4,13 +4,12 @@ from torch.utils.data.dataset import Dataset
 import torch.nn as nn
 import torch
 from transformers.file_utils import is_torch_tpu_available
-from tqdm import tqdm as tqdm
-
 from typing import NamedTuple, Union,Tuple,Optional,Dict
 import numpy as np
 import logging
 from transformers import Trainer
-
+from .APM import APM_update
+from tqdm.auto import tqdm, trange
 
 logger = logging.getLogger(__name__)
 class sfdaPredictionOutput(NamedTuple):
@@ -22,9 +21,22 @@ class sfdaPredictionOutput(NamedTuple):
 class sfdaTrainer(Trainer):
         def __init__(
         self,
+        update_freq = 100,
         **kwargs,
     ):
             super(sfdaTrainer,self).__init__(**kwargs)
+            
+            self.prototype_p,self.prototype_f =  None, None
+            self.update_freq  = update_freq
+            self.last_update_epoch = 0
+            self.alpha = np.float(1.0)
+        
+            
+        def _update_prototypes(self):
+            self.prototype_p,self.prototype_f,_ = APM_update(self.prediction_loop(self.get_train_dataloader(),description = F"APM Update @Global step {self.global_step}",ret_feats  =True))
+        def _update_alpha(self):
+            self.alpha = np.float(2.0 / (1.0 + np.exp(-10 * self.global_step / float( self.args.num_train_epochs//2))) - 1.0)
+            
         def predict(self, test_dataset: Dataset, ret_feats: Optional[bool] = None) -> sfdaPredictionOutput:
             """
             Run prediction and returns predictions and potential metrics.
@@ -221,3 +233,49 @@ class sfdaTrainer(Trainer):
                 labels = None
 
             return (loss, logits, labels,feats)
+        def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+            
+            self._update_alpha()
+            if (self.global_step + self.update_freq)%self.update_freq == 0:
+                self._update_prototypes()
+                self.last_update_epoch = self.epoch
+            model.train()
+            inputs = self._prepare_inputs(inputs)
+
+            if self.args.fp16 and _use_native_amp:
+                with autocast():
+                    loss = self.compute_loss(model, inputs)
+            else:
+                loss = self.compute_loss(model, inputs)
+
+            if self.args.n_gpu > 1:
+                loss = loss.mean()  # mean() to average on multi-gpu parallel training
+
+            if self.args.gradient_accumulation_steps > 1:
+                loss = loss / self.args.gradient_accumulation_steps
+
+            if self.args.fp16 and _use_native_amp:
+                self.scaler.scale(loss).backward()
+            elif self.args.fp16 and _use_apex:
+                with amp.scale_loss(loss, self.optimizer) as scaled_loss:
+                    scaled_loss.backward()
+            else:
+                loss.backward()
+
+            return loss.detach()
+        def compute_loss(self, model, inputs):
+            """
+            How the loss is computed by Trainer. By default, all models return the loss in the first element.
+
+            Subclass and override for custom behavior.
+            """
+            prototype_p = torch.Tensor(self.prototype_p).to(self.args.device)
+            prototype_f = torch.Tensor(self.prototype_f).to(self.args.device)
+            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f )
+            # Save past state if it exists
+            if self.args.past_index >= 0:
+                self._past = outputs[self.args.past_index]
+            # We don't use .loss here since the model may return tuples instead of ModelOutput.
+            [s2t_loss, t_loss] = outputs.loss
+            return (1-self.alpha)*s2t_loss +self.alpha*t_loss
+
