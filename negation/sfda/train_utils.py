@@ -172,26 +172,7 @@ class sfdaTrainer(Trainer):
         def prediction_step(
         self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]], prediction_loss_only: bool, ret_feats: bool,
     ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor],Optional[torch.Tensor]]:
-            """
-            Perform an evaluation step on :obj:`model` using obj:`inputs`.
-
-            Subclass and override to inject custom behavior.
-
-            Args:
-                model (:obj:`nn.Module`):
-                    The model to evaluate.
-                inputs (:obj:`Dict[str, Union[torch.Tensor, Any]]`):
-                    The inputs and targets of the model.
-
-                    The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
-                    argument :obj:`labels`. Check your model's documentation for all accepted arguments.
-                prediction_loss_only (:obj:`bool`):
-                    Whether or not to return the loss only.
-
-            Return:
-                Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
-                A tuple with the loss, logits and labels (each being optional).
-            """
+            
             has_labels = all(inputs.get(k) is not None for k in self.args.label_names)
             inputs = self._prepare_inputs(inputs)
 
