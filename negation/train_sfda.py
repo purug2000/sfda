@@ -63,7 +63,11 @@ class DataTrainingArguments:
         metadata={"help": "The input train file"}
     )
     train_pred: str = field(
-        metadata={"help": "The input train file"}
+        metadata={"help": "A file containing the generated pseudo labels for the train file "}
+    ),
+    update_freq: int = field(
+        default = 100,
+        metadata={"help": "The number of global steps after which  APM prototypes are updated "}
     )
     max_seq_length: int = field(
         default=128,
@@ -143,6 +147,7 @@ def main():
     trainer = sfdaTrainer(
         model=model,
         args=training_args,
+        update_freq = data_args.update_freq,
         compute_metrics=None,
         train_dataset = train_dataset,
     )
