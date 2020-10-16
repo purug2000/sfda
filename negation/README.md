@@ -1,4 +1,4 @@
-# SFDA using missing labels
+# SFDA using Pseudo Labels
 To train the model 
 ```bash
 python train_sfda.py \
