@@ -468,14 +468,22 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
                     t_loss = loss_fct(logits_t.view(-1, self.num_labels), labels.view(-1))
                 loss = t_loss
                 
-        return sfdaNegationClassifierOutput(
-            loss=loss,
-            logits=logits_t,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            last_hidden_state = outputs[0]
-        )
-
+        if return_dict:
+            return sfdaNegationClassifierOutput(
+                loss=loss,
+                logits=logits_t,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+                last_hidden_state = outputs[0]
+            )
+        else:
+            return sfdaNegationClassifierOutput(
+                loss=loss,
+                logits=logits_t,
+                hidden_states=None,
+                attentions=outputs.attentions,
+                last_hidden_state = outputs[0]
+            )
     
     ########################################################################################
     ########################################################################################

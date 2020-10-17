@@ -1,11 +1,12 @@
 # SFDA using Pseudo Labels
 To train the model 
 ```bash
-python train_sfda.py \
---train_file practice_test/train.tsv\
+python train_sfda.py --train_file practice_text/train.tsv \
 --train_pred ../outputs/negation/train_pred.tsv \
---output_dir ../outputs/negation/model/ \ 
---update_freq 150 
+--update_freq 100 \
+--output_dir ../outputs/negation/model/ \
+--eval_pred practice_text/dev_labels.txt  \
+--eval_file practice_text/dev.tsv 
 ```
 **Please Note:** You may need to extract **train_pred.tsv** first. To do so, make use of **Run_Save.ipynb** notebook
 

@@ -7,7 +7,7 @@ from transformers.file_utils import is_torch_tpu_available
 from typing import NamedTuple, Union,Tuple,Optional,Dict
 import numpy as np
 import logging
-from transformers import Trainer
+from transformers import Trainer ,EvalPrediction
 from .APM import APM_update
 from tqdm.auto import tqdm, trange
 
@@ -189,50 +189,20 @@ class sfdaTrainer(Trainer):
             inputs = self._prepare_inputs(inputs)
 
             with torch.no_grad():
-                if ret_feats is True:
-                    outputs = model(**inputs,return_dict = True)
-#                     print(outputs)
-                    loss = outputs.loss
-                    logits = outputs.logits
-#                     print(outputs.last_hidden_state.shape)
-                    feats = outputs.last_hidden_state[:,0,:].detach()
-                    labels = None
-                    if has_labels:
-                        # The .mean() is to reduce in case of distributed training
-                        loss = loss.mean().item()
-                        labels = tuple(inputs.get(name).detach() for name in self.args.label_names)
-                        if len(labels) == 1:
-                            labels = labels[0]
-                    return (loss, logits, labels, feats)
-                else:
-                    feats = None
-                    outputs = model(**inputs)
-                    if has_labels:
-                        # The .mean() is to reduce in case of distributed training
-                        loss = outputs[0].mean().item()
-                        logits = outputs[1:]
-                    else:
-                        loss = None
-                        # Slicing so we get a tuple even if `outputs` is a `ModelOutput`.
-                        logits = outputs[:]
-                    if self.args.past_index >= 0:
-                        self._past = outputs[self.args.past_index if has_labels else self.args.past_index - 1]
-
-            if prediction_loss_only:
-                return (loss, None, None,feats)
-
-            logits = tuple(logit.detach() for logit in logits)
-            if len(logits) == 1:
-                logits = logits[0]
-
-            if has_labels:
-                labels = tuple(inputs.get(name).detach() for name in self.args.label_names)
-                if len(labels) == 1:
-                    labels = labels[0]
-            else:
+                outputs = model(**inputs)
+    #                     print(outputs)
+                loss = outputs.loss
+                logits = outputs.logits
+    #                     print(outputs.last_hidden_state.shape)
+                feats = outputs.last_hidden_state[:,0,:].detach()
                 labels = None
-
-            return (loss, logits, labels,feats)
+                if has_labels:
+                    # The .mean() is to reduce in case of distributed training
+                    loss = loss.mean().item()
+                    labels = tuple(inputs.get(name).detach() for name in self.args.label_names)
+                    if len(labels) == 1:
+                        labels = labels[0]
+                return (loss, logits, labels, feats)
         def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
             
             self._update_alpha()

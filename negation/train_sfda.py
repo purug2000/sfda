@@ -15,14 +15,18 @@ from transformers import (
     TrainingArguments,
     set_seed,
     HfArgumentParser,
+    EvalPrediction,
 )
 from typing import Callable, Dict, Optional, List, Union
 logger = logging.getLogger(__name__)
+from transformers.data.metrics import acc_and_f1
 
 from enum import Enum
 from sfda.models import sfdaTargetRobertaNegation
 from sfda.trainer import sfdaTrainer
 from sfda.DataProcessor import sfdaNegationDataset
+from sfda.DataProcessor import NegationDataset
+
 
 @dataclass
 class ModelArguments:
@@ -64,7 +68,13 @@ class DataTrainingArguments:
     )
     train_pred: str = field(
         metadata={"help": "A file containing the generated pseudo labels for the train file "}
-    ),
+    )
+    eval_file:str = field(
+        metadata={"help": "A file to evaluate on."}
+    )
+    eval_pred:str = field(
+        metadata={"help": "A file to evaluate on."}
+    )
     update_freq: int = field(
         default = 100,
         metadata={"help": "The number of global steps after which  APM prototypes are updated "}
@@ -79,6 +89,14 @@ class DataTrainingArguments:
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
+
+def build_compute_metrics_fn() -> Callable[[EvalPrediction], Dict]:
+    def compute_metrics_fn(p: EvalPrediction):
+        preds = np.argmax(p.predictions, axis=1)
+        return acc_and_f1(preds, p.label_ids)
+
+    return compute_metrics_fn
+        
         
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -143,17 +161,28 @@ def main():
         cache_dir=model_args.cache_dir,
         )
     train_dataset = sfdaNegationDataset.from_tsv(data_args.train_file, data_args.train_pred,tokenizer)
-    
+    eval_dataset = sfdaNegationDataset.from_tsv(data_args.eval_file, data_args.eval_pred,tokenizer)
     trainer = sfdaTrainer(
         model=model,
         args=training_args,
         update_freq = data_args.update_freq,
-        compute_metrics=None,
+        compute_metrics=build_compute_metrics_fn(),
         train_dataset = train_dataset,
+        eval_dataset = eval_dataset
     )
     trainer.train(model_path=model_args.src_model_name_or_pth if os.path.isdir(model_args.src_model_name_or_pth) else None
         )
-    trainer.save()
+    eval_result = trainer.evaluate()
+    output_eval_file = os.path.join(
+        training_args.output_dir, f"eval_results.txt"
+    )
+    if trainer.is_world_process_zero():
+        with open(output_eval_file, "w") as writer:
+            logger.info("***** Eval results *****")
+            for key, value in eval_result.items():
+                logger.info("  %s = %s", key, value)
+                writer.write("%s = %s\n" % (key, value))
+    trainer.save_model()
     
 def _mp_fn(index):
     # For xla_spawn (TPUs)
