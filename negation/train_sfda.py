@@ -28,6 +28,7 @@ from sfda.DataProcessor import sfdaNegationDataset
 from sfda.DataProcessor import NegationDataset
 
 
+
 @dataclass
 class ModelArguments:
     """
@@ -49,8 +50,7 @@ class ModelArguments:
     cache_dir: Optional[str] = field(
         default=None, metadata={"help": "Where do you want to store the pretrained models downloaded from s3"}
     )
-        
-
+    
 @dataclass
 class DataTrainingArguments:
     """
@@ -88,6 +88,12 @@ class DataTrainingArguments:
     )
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+    )
+    APM_Strategy: str = field(
+        default="top_k", metadata={"help": "APM update strategy, use top_k for updating APM with top_k from each label and thresh for specifying it with a threshold score."}
+    )
+    top_k: int = field(
+        default=100, metadata={"help": "[For top_k APM update strategy], the number of prototypes extracted for each label"}
     )
 
 def build_compute_metrics_fn() -> Callable[[EvalPrediction], Dict]:
@@ -166,13 +172,15 @@ def main():
         model=model,
         args=training_args,
         update_freq = data_args.update_freq,
+        APM_Strategy =  data_args.APM_Strategy,
+        top_k = data_args.top_k,
         compute_metrics=build_compute_metrics_fn(),
         train_dataset = train_dataset,
         eval_dataset = eval_dataset
     )
     trainer.train(model_path=model_args.src_model_name_or_pth if os.path.isdir(model_args.src_model_name_or_pth) else None
         )
-    eval_result = trainer.evaluate()
+    eval_result = trainer.evaluate(eval_dataset)
     output_eval_file = os.path.join(
         training_args.output_dir, f"eval_results.txt"
     )
@@ -191,5 +199,4 @@ def _mp_fn(index):
 
 if __name__ == "__main__":
     main()
-
     

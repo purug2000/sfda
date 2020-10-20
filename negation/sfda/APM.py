@@ -2,21 +2,21 @@ import time
 import torch
 import numpy as np
 
-def APM_update(prediction_dict, flag = "Top k", k = 100, thresh_t = 0.11206, thresh_f = 0.00386): 
+def APM_update(prediction_dict, flag = "top_k", k = 500, thresh_t = 0.11206, thresh_f = 0.00386): 
     start_time = time.time()
     feat_matrix = prediction_dict.feat_matrix # N x 768
     values = torch.from_numpy(prediction_dict.predictions) # N x 2
     soft = torch.nn.Softmax(dim=1)
     logits = soft(values).numpy()
     
-    if (flag == "Top k"):
+    if (flag == "top_k"):
       # take the top k scores of each class
       prototypes_t = feat_matrix[np.argpartition(logits[:,1], np.size(logits[:,1])-k)[:-k]] # 1
       prototypes_f = feat_matrix[np.argpartition(logits[:,0],np.size(logits[:,1])-k)[:-k]] #-1
       num_prototypes = prototypes_t.shape[0] + prototypes_f.shape[0]
       return prototypes_t, prototypes_f, num_prototypes
 
-    else if (flag == "Thresholding"):
+    elif (flag == "Thresholding"):
       # threshold values optimized on the given data (~74 prototypes in each class)
       max_index = np.argmax(logits, axis =1) # indices 0 and 1
       label = np.where(max_index == 0, -1, 1)

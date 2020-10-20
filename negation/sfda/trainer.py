@@ -22,6 +22,8 @@ class sfdaTrainer(Trainer):
         def __init__(
         self,
         update_freq = 100,
+        APM_Strategy =  "top_k",
+        top_k = 100,
         **kwargs,
     ):
             super(sfdaTrainer,self).__init__(**kwargs)
@@ -29,13 +31,15 @@ class sfdaTrainer(Trainer):
             self.prototype_p,self.prototype_f =  None, None
             self.update_freq  = update_freq
             self.last_update_epoch = 0
-            self.alpha = np.float(1.0)
+            self.alpha = np.float(0)
+            self.APM_Strategy = APM_Strategy
+            self.top_k = top_k
         
             
         def _update_prototypes(self):
-            self.prototype_p,self.prototype_f,_ = APM_update(self.prediction_loop(self.get_train_dataloader(),description = F"APM Update @Global step {self.global_step}",ret_feats  =True))
+            self.prototype_p,self.prototype_f,_ = APM_update(self.prediction_loop(self.get_train_dataloader(),description = F"APM Update @Global step {self.global_step}",ret_feats  =True), flag = self.APM_Strategy,k = self.top_k )
         def _update_alpha(self):
-            self.alpha = np.float(2.0 / (1.0 + np.exp(-10 * self.global_step / float( self.args.num_train_epochs//2))) - 1.0)
+            self.alpha = np.float(2.0 / (1.0 + np.exp(-10 * self.global_step / float( (self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size + 1)//2))) - 1.0)
             
         def predict(self, test_dataset: Dataset, ret_feats: Optional[bool] = None) -> sfdaPredictionOutput:
             """
