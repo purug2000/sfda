@@ -108,9 +108,7 @@ def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
-
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
-
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -118,16 +116,17 @@ def main():
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
+    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{data_args.top_k}/")
     if (
         os.path.exists(training_args.output_dir)
         and os.listdir(training_args.output_dir)
-        and training_args.do_train
         and not training_args.overwrite_output_dir
     ):
         raise ValueError(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
-
+    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda_{data_args.top_k}.csv")
+    print(save_path)
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -191,6 +190,13 @@ def main():
                 logger.info("  %s = %s", key, value)
                 writer.write("%s = %s\n" % (key, value))
     trainer.save_model()
+    predictions = trainer.predict(eval_dataset).predictions
+    predictions = np.argmax(predictions, axis=1)
+    with open(save_path, "w") as writer:
+        logger.info("***** Test results *****")
+        for index, item in enumerate(predictions):
+            item = train_dataset.get_labels()[item]
+            writer.write("%s\n" % (item))
     
 def _mp_fn(index):
     # For xla_spawn (TPUs)

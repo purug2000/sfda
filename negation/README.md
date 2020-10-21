@@ -12,4 +12,4 @@ python train_sfda.py --train_file practice_text/train.tsv \
 ```
 **Please Note:** You may need to extract **train_pred.tsv** first. To do so, make use of **Run_Save.ipynb** notebook
 
-update_freq allows the user to choose the number of global steps after which APM prototype updates will take place.
+update_freq allows the user to choose the number of global steps after which APM prototype updates will take place. The script will automatically create a model directory titled "top-k" where 'k' is the value passed to top_k flag, and store the predicitons in the file itself.
