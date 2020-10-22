@@ -39,6 +39,8 @@ class sfdaTrainer(Trainer):
                 self._update_alpha = self._update_alpha_sqr
             elif sfda_args.alpha_routine.lower() == "lin":
                 self._update_alpha = self._update_alpha_lin
+            elif sfda_args.alpha_routine.lower() == "cube":
+                self._update_alpha = self._update_alpha_cube
             else:
                 raise F"Invalid alpha routine {sfda_args.alpha_routine}"
 
@@ -50,7 +52,9 @@ class sfdaTrainer(Trainer):
             self.alpha = np.float((self.global_step / float(self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size))**2)
         def _update_alpha_lin(self):
             self.alpha = np.float((self.global_step / float(self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size)))
-             
+        def _update_alpha_cube(self):
+            self.alpha = np.float((self.global_step / float(self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size))**3)
+               
         def predict(self, test_dataset: Dataset, ret_feats: Optional[bool] = None) -> sfdaPredictionOutput:
             """
             Run prediction and returns predictions and potential metrics.

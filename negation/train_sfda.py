@@ -110,7 +110,7 @@ class sfdaTrainingArguments:
         metadata={"help": "The number of global steps after which  APM prototypes are updated "}
     )
     alpha_routine: str = field(
-        default="exp", metadata={"help": "The alpha update startegy. Choose from \"exp\" : Exponential routine, \"sqr\" : Square routine , \"lin\": Linear routine "}
+        default="exp", metadata={"help": "The alpha update startegy. Choose from \"exp\" : Exponential routine, \"sqr\" : Square routine , \"lin\": Linear routine,, \"cube\": Cube routine "}
     )
 
 
