@@ -75,10 +75,6 @@ class DataTrainingArguments:
     eval_pred:str = field(
         metadata={"help": "A file to evaluate on."}
     )
-    update_freq: int = field(
-        default = 100,
-        metadata={"help": "The number of global steps after which  APM prototypes are updated "}
-    )
     max_seq_length: int = field(
         default=128,
         metadata={
@@ -89,12 +85,6 @@ class DataTrainingArguments:
     overwrite_cache: bool = field(
         default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
     )
-    APM_Strategy: str = field(
-        default="top_k", metadata={"help": "APM update strategy, use top_k for updating APM with top_k from each label and thresh for specifying it with a threshold score."}
-    )
-    top_k: int = field(
-        default=100, metadata={"help": "[For top_k APM update strategy], the number of prototypes extracted for each label"}
-    )
 
 def build_compute_metrics_fn() -> Callable[[EvalPrediction], Dict]:
     def compute_metrics_fn(p: EvalPrediction):
@@ -104,19 +94,39 @@ def build_compute_metrics_fn() -> Callable[[EvalPrediction], Dict]:
     return compute_metrics_fn
         
         
+@dataclass
+class sfdaTrainingArguments:
+    APM_Strategy: str = field(
+        default="top_k", metadata={"help": "APM update strategy, use top_k for updating APM with top_k from each label and thresh for specifying it with a threshold score."}
+    )
+    top_k: int = field(
+        default=100, metadata={"help": "[For top_k APM update strategy], the number of prototypes extracted for each label"}
+    )
+    cf_ratio: float = field(
+        default=1.0, metadata={"help": "The minimum ratio of min similarity  of  the closest class to the max similarity point of the farthest class to be eligible for consideration as High Confidence point"}
+    )
+    update_freq: int = field(
+        default = 100,
+        metadata={"help": "The number of global steps after which  APM prototypes are updated "}
+    )
+    alpha_routine: str = field(
+        default="exp", metadata={"help": "The alpha update startegy. Choose from \"exp\" : Exponential routine, \"sqr\" : Square routine , \"lin\": Linear routine "}
+    )
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, sfdaTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+        model_args, data_args, training_args, sfda_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args, sfda_args = parser.parse_args_into_dataclasses()
 
-    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{data_args.top_k}/")
+    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}/")
     if (
         os.path.exists(training_args.output_dir)
         and os.listdir(training_args.output_dir)
@@ -125,7 +135,7 @@ def main():
         raise ValueError(
             f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
-    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda_{data_args.top_k}.csv")
+    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda_{sfda_args.top_k}.csv")
     print(save_path)
     # Setup logging
     logging.basicConfig(
@@ -170,12 +180,10 @@ def main():
     trainer = sfdaTrainer(
         model=model,
         args=training_args,
-        update_freq = data_args.update_freq,
-        APM_Strategy =  data_args.APM_Strategy,
-        top_k = data_args.top_k,
+        sfda_args = sfda_args,
         compute_metrics=build_compute_metrics_fn(),
         train_dataset = train_dataset,
-        eval_dataset = eval_dataset
+        eval_dataset = eval_dataset,
     )
     trainer.train(model_path=model_args.src_model_name_or_pth if os.path.isdir(model_args.src_model_name_or_pth) else None
         )

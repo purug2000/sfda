@@ -23,7 +23,7 @@ from torch import nn
 import re
 import os
 import logging
-from .utils import ComputeSimilarity
+from .utils import compute_plabel_and_conf
 
 logger = logging.getLogger(__name__)
 
@@ -352,40 +352,7 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
             model.to(xm.xla_device())
 
         return model
-    ####################################################################################
-    ####################################################################################
-    def compute_plabel_and_conf(self,prototype_p,prototype_f,inp_feats):
-        
-        #compute similarity scores between prototypes and batch tensors
-        sim_mat_p = ComputeSimilarity(prototype_p,inp_feats)
-        sim_mat_f = ComputeSimilarity(prototype_f,inp_feats)
-        
-        
-        #compute class similarity scores for batch tensors
-        sim_p = torch.mean(sim_mat_p,1)
-        sim_f = torch.mean(sim_mat_f,1)
-        
-        #Find pseudo labels
-        p_label  = torch.where(sim_p<sim_f, torch.zeros_like(sim_p , dtype =  torch.long ),torch.ones_like(sim_p , dtype =  torch.long ))
-        
-        #finding max similarity from each prototype class 
-        max_p,_ =  torch.max(sim_mat_p,axis = 1)
-        max_f,_ =  torch.max(sim_mat_f,axis = 1)
-        
-        #finding min similarity from each prototype class 
-        min_p,_ =  torch.min(sim_mat_p,axis = 1)
-        min_f,_ =  torch.min(sim_mat_f,axis = 1)
-        
-        #finding max and min similarity from close and far classes respectively
-        min_sim_from_close_class =  torch.where(p_label == 1,min_p,min_f )
-        max_sim_from_far_class =  torch.where(p_label == 1,max_f,max_p )
-        
-        conf_mask =  (min_sim_from_close_class > max_sim_from_far_class)
-        return p_label, conf_mask
-    ####################################################################################
-    ####################################################################################
-       
-        
+   
         
     def forward(
         self,
@@ -401,6 +368,7 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
+        cf_ratio = 1.0
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -437,7 +405,7 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
         loss = None
                     
         if prototype_p is not None: 
-            t_labels,conf_mask = self.compute_plabel_and_conf(prototype_p,prototype_f,outputs[0][:,0,:])
+            t_labels,conf_mask = compute_plabel_and_conf(prototype_p,prototype_f,outputs[0][:,0,:],cf_ratio)
             if labels is not None:
                 if self.num_labels == 1:
                     #  I fWe are doing regression

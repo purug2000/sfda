@@ -21,26 +21,36 @@ class sfdaPredictionOutput(NamedTuple):
 class sfdaTrainer(Trainer):
         def __init__(
         self,
-        update_freq = 100,
-        APM_Strategy =  "top_k",
-        top_k = 100,
+        sfda_args,
         **kwargs,
     ):
             super(sfdaTrainer,self).__init__(**kwargs)
             
             self.prototype_p,self.prototype_f =  None, None
-            self.update_freq  = update_freq
+            self.update_freq  = sfda_args.update_freq
             self.last_update_epoch = 0
             self.alpha = np.float(0)
-            self.APM_Strategy = APM_Strategy
-            self.top_k = top_k
-        
-            
+            self.APM_Strategy = sfda_args.APM_Strategy
+            self.top_k = sfda_args.top_k
+            self.cf_ratio = sfda_args.cf_ratio
+            if sfda_args.alpha_routine.lower() == "exp":
+                self._update_alpha = self._update_alpha_exp
+            elif sfda_args.alpha_routine.lower() == "sqr":
+                self._update_alpha = self._update_alpha_sqr
+            elif sfda_args.alpha_routine.lower() == "lin":
+                self._update_alpha = self._update_alpha_lin
+            else:
+                raise F"Invalid alpha routine {sfda_args.alpha_routine}"
+
         def _update_prototypes(self):
-            self.prototype_p,self.prototype_f,_ = APM_update(self.prediction_loop(self.get_train_dataloader(),description = F"APM Update @Global step {self.global_step}",ret_feats  =True), flag = self.APM_Strategy,k = self.top_k )
-        def _update_alpha(self):
+            self.prototype_p,self.prototype_f,_ = APM_update(self.prediction_loop(self.get_train_dataloader(),description = F"APM Update @Global step {self.global_step}",ret_feats  =True), flag = self.APM_Strategy,k = self.top_k,cf_ratio = self.cf_ratio )
+        def _update_alpha_exp(self):
             self.alpha = np.float(2.0 / (1.0 + np.exp(-10 * self.global_step / float( (self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size + 1)//2))) - 1.0)
-            
+        def _update_alpha_sqr(self):
+            self.alpha = np.float((self.global_step / float(self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size))**2)
+        def _update_alpha_lin(self):
+            self.alpha = np.float((self.global_step / float(self.args.num_train_epochs*len(self.train_dataset)//self.args.train_batch_size)))
+             
         def predict(self, test_dataset: Dataset, ret_feats: Optional[bool] = None) -> sfdaPredictionOutput:
             """
             Run prediction and returns predictions and potential metrics.
@@ -245,7 +255,7 @@ class sfdaTrainer(Trainer):
             """
             prototype_p = torch.Tensor(self.prototype_p).to(self.args.device)
             prototype_f = torch.Tensor(self.prototype_f).to(self.args.device)
-            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f )
+            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f,cf_ratio = self.cf_ratio )
             # Save past state if it exists
             if self.args.past_index >= 0:
                 self._past = outputs[self.args.past_index]
