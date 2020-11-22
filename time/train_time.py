@@ -14,7 +14,7 @@ from spacy.lang.en import English
 import anafora
 
 
-def train(data_dir, save_dir):
+def train(data_dir, anno_dir, save_dir):
 
     # load the Huggingface config, tokenizer, and model
     model_name = "clulab/roberta-timex-semeval"
@@ -30,7 +30,7 @@ def train(data_dir, save_dir):
     nlp.add_pipe(nlp.create_pipe("sentencizer"))
 
     # create a torch dataset from a directory of Anafora XML annotations and text files
-    dataset = TimexDataset.from_texts(data_dir, nlp, tokenizer, config)
+    dataset = TimexDataset.from_texts(data_dir, anno_dir,nlp, tokenizer, config)
 
     # train and save the torch model
     trainer = Trainer(
@@ -109,7 +109,7 @@ class TimexDataset(Dataset):
         return self.features[i]
 
     @classmethod
-    def from_texts(cls, data_dir, nlp, tokenizer, config):
+    def from_texts(cls, data_dir, anno_dir, nlp, tokenizer, config):
         if not os.path.exists(data_dir):
             raise Exception("The %s directory does not exist." % data_dir)
         text_directory_files = anafora.walk(data_dir, xml_name_regex=".*((?<![.].{3})|[.]txt)$")
@@ -120,7 +120,7 @@ class TimexDataset(Dataset):
             text_subdir_path, text_doc_name, text_file_names = text_files
             if len(text_file_names) != 1:
                 raise Exception("Wrong number of text files in %s" % text_subdir_path)
-            anafora_path = os.path.join(data_dir, text_subdir_path)
+            anafora_path = os.path.join(anno_dir, text_subdir_path)
             anafora_directory_files = anafora.walk(anafora_path, xml_name_regex="[.]xml$")
             anafora_directory_files = list(anafora_directory_files)
             if len(anafora_directory_files) != 1:
@@ -182,8 +182,10 @@ if __name__ == "__main__":
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument("-t", "--train", metavar="DIR", dest="train_dir",
-                        help="The root of the training set directory tree containing raw text and of Anafora XML.")
+                        help="The root of the training set directory tree containing raw text.")
+    parser.add_argument("-a", "--anno", metavar="DIR", dest="anno_dir",
+                        help="The root of the training set directory tree containing Anafora XML.")
     parser.add_argument("-s", "--save", metavar="DIR", dest="save_dir",
                         help="The directory to save the model and the log files.")
     args = parser.parse_args()
-    train(args.train_dir, args.save_dir)
+    train(args.train_dir, args.anno_dir, args.save_dir)
