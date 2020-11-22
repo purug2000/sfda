@@ -216,6 +216,8 @@ def main():
         )
         logger.info("Performing MLM pretraining")
         trainer_mlm.train()
+        trainer_mlm.save_model()
+    
         
     ######  <------------------------------------->  ######
     
@@ -248,8 +250,9 @@ def main():
         )
     
     else:
-        trainer.train(model_path=model_args.src_model_name_or_pth if os.path.isdir(model_args.src_model_name_or_pth) else None
-            )
+        trainer.train()
+        trainer.save_model()
+    
     
     ######  <------------------------------------->  ######
     
