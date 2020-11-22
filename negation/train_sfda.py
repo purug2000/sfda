@@ -16,6 +16,7 @@ from transformers import (
     set_seed,
     HfArgumentParser,
     EvalPrediction,
+    DataCollatorForLanguageModeling,
 )
 from typing import Callable, Dict, Optional, List, Union
 logger = logging.getLogger(__name__)
@@ -26,7 +27,8 @@ from sfda.models import sfdaTargetRobertaNegation
 from sfda.trainer import sfdaTrainer
 from sfda.DataProcessor import sfdaNegationDataset
 from sfda.DataProcessor import NegationDataset
-
+from datasets import load_dataset
+    
 
 
 @dataclass
@@ -112,6 +114,12 @@ class sfdaTrainingArguments:
     alpha_routine: str = field(
         default="exp", metadata={"help": "The alpha update startegy. Choose from \"exp\" : Exponential routine, \"sqr\" : Square routine , \"lin\": Linear routine,, \"cube\": Cube routine "}
     )
+    mlm_pretrain: bool = field(
+        default=False, metadata={"help": "Choose if you want to perform MLM pretraining"}
+    )
+    mlm_lr: float = field(
+        default=5e-6, metadata={"help": "Specify learning rate for MLM training"}
+    )
 
 
 def main():
@@ -126,17 +134,8 @@ def main():
     else:
         model_args, data_args, training_args, sfda_args = parser.parse_args_into_dataclasses()
 
-    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}/")
-    if (
-        os.path.exists(training_args.output_dir)
-        and os.listdir(training_args.output_dir)
-        and not training_args.overwrite_output_dir
-    ):
-        raise ValueError(
-            f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
-        )
-    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda_{sfda_args.top_k}.csv")
-    print(save_path)
+    
+    
     # Setup logging
     logging.basicConfig(
         format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
@@ -152,6 +151,7 @@ def main():
         training_args.fp16,
     )
     logger.info("Training/evaluation parameters %s", training_args)
+    logger.info("sfda_args %s", sfda_args)
     set_seed(training_args.seed)
 
     try:
@@ -175,6 +175,57 @@ def main():
         config=config,
         cache_dir=model_args.cache_dir,
         )
+
+    ######  ----->      MLM Pretraining      <-----  ######
+    
+    MLM_path = os.path.join(training_args.output_dir,F"MLM{sfda_args.mlm_lr}")
+    
+    if (
+        os.path.exists(MLM_path)
+        and os.listdir(MLM_path)
+        and not training_args.overwrite_output_dir
+    ):
+        logger.warning(
+            f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overwrite, loading model-weigths from the directory for now."
+        )
+        model = sfdaTargetRobertaNegation.from_pretrained(
+            MLM_path,
+            from_tf=bool(".ckpt" in model_args.src_model_name_or_pth),
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
+    else:
+        dataset = load_dataset("text", data_files=  data_args.train_file)
+        def tokenize_function(examples):
+            return tokenizer(examples["text"], return_special_tokens_mask=True)
+        tokenized_dataset = dataset.map(
+                tokenize_function,
+                batched=True,
+                num_proc=None,
+    #             remove_columns=[text_column_name],
+    #             load_from_cache_file=not data_args.overwrite_cache,
+            )
+        data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.3)
+        trainer_mlm = Trainer(
+            model=model,
+            args=TrainingArguments(output_dir = MLM_path ,learning_rate = sfda_args.mlm_lr),
+            compute_metrics=build_compute_metrics_fn(),
+            train_dataset = tokenized_dataset["train"],
+            data_collator = data_collator
+        )
+        logger.info("Performing MLM pretraining")
+        trainer_mlm.train()
+        
+    ######  <------------------------------------->  ######
+    
+
+
+    ######  ------>      SFDA Training      <------  ######
+    
+    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}/")
+    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda_{sfda_args.top_k}.csv")
+    logger.info(save_path)
+    
     train_dataset = sfdaNegationDataset.from_tsv(data_args.train_file, data_args.train_pred,tokenizer)
     eval_dataset = sfdaNegationDataset.from_tsv(data_args.eval_file, data_args.eval_pred,tokenizer)
     trainer = sfdaTrainer(
@@ -185,8 +236,26 @@ def main():
         train_dataset = train_dataset,
         eval_dataset = eval_dataset,
     )
-    trainer.train(model_path=model_args.src_model_name_or_pth if os.path.isdir(model_args.src_model_name_or_pth) else None
+    
+    if (
+        os.path.exists(training_args.output_dir)
+        and os.listdir(training_args.output_dir)
+        and not training_args.overwrite_output_dir
+    ):
+        logger.warning(
+            f"Output directory ({training_args.output_dir}) already exists and is not empty. Attempting to load pre-trained weights from dir. Use --overwrite_output_dir to overwrite."
         )
+    
+    else:
+        trainer.train(model_path=model_args.src_model_name_or_pth if os.path.isdir(model_args.src_model_name_or_pth) else None
+            )
+    
+    ######  <------------------------------------->  ######
+    
+
+    ######  ------>        Evaluation       <------  ######
+    
+    
     eval_result = trainer.evaluate(eval_dataset)
     output_eval_file = os.path.join(
         training_args.output_dir, f"eval_results.txt"
@@ -197,7 +266,6 @@ def main():
             for key, value in eval_result.items():
                 logger.info("  %s = %s", key, value)
                 writer.write("%s = %s\n" % (key, value))
-    trainer.save_model()
     predictions = trainer.predict(eval_dataset).predictions
     predictions = np.argmax(predictions, axis=1)
     with open(save_path, "w") as writer:
@@ -206,6 +274,9 @@ def main():
             item = train_dataset.get_labels()[item]
             writer.write("%s\n" % (item))
     
+    ######  <------------------------------------->  ######
+    
+
 def _mp_fn(index):
     # For xla_spawn (TPUs)
     main()

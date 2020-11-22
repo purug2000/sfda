@@ -10,7 +10,9 @@ python train_sfda.py --train_file practice_text/train.tsv \
 --APM_Strategy "top_k" \
 --top_k 100 \
 --alpha_routine "sqr" \
---cf_ratio 20 
+--cf_ratio 20 \
+--mlm_pretrain \
+--mlm_lr 5e-6 
 ```
 **Please Note:** You may need to extract **train_pred.tsv** first. To do so, make use of **Run_Save.ipynb** notebook
 

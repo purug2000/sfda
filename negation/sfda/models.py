@@ -1,5 +1,5 @@
-from transformers.modeling_outputs import ModelOutput
-from transformers.modeling_roberta import RobertaPreTrainedModel,RobertaModel,RobertaClassificationHead
+from transformers.modeling_outputs import ModelOutput,MaskedLMOutput
+from transformers.modeling_roberta import RobertaPreTrainedModel,RobertaModel,RobertaClassificationHead, RobertaLMHead
 from typing import NamedTuple, Union,Tuple,Optional,Dict
 import torch
 
@@ -24,6 +24,7 @@ import re
 import os
 import logging
 from .utils import compute_plabel_and_conf
+
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +115,7 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
         self.num_labels = config.num_labels
 
         self.roberta = RobertaModel(config, add_pooling_layer=False)
+        self.lm_head = RobertaLMHead(config)
         self.classifier_t = RobertaClassificationHead(config)
         self.classifier_s2t = RobertaClassificationHead(config)
 
@@ -368,7 +370,8 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
         output_attentions=None,
         output_hidden_states=None,
         return_dict=True,
-        cf_ratio = 1.0
+        cf_ratio = 1.0,
+        train_mode = "mlm"
     ):
         r"""
         labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size,)`, `optional`):
@@ -399,59 +402,79 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
         
         
         sequence_output = outputs[0]
-        logits_t = self.classifier_t(sequence_output) #logits of the target classifier
-        logits_s2t = self.classifier_s2t(sequence_output) #logits of s2t classifier for maintaining sanity
+        if train_mode == "mlm":
+            prediction_scores = self.lm_head(sequence_output)
 
-        loss = None
-                    
-        if prototype_p is not None: 
-            t_labels,conf_mask = compute_plabel_and_conf(prototype_p,prototype_f,outputs[0][:,0,:],cf_ratio)
+            masked_lm_loss = None
             if labels is not None:
-                if self.num_labels == 1:
-                    #  I fWe are doing regression
-                    loss_fct = MSELoss()
-                    s2t_loss = loss_fct(logits.view(-1), s_labels.view(-1))
-                else:
-                    loss_fct = CrossEntropyLoss()
-                    s2t_loss = loss_fct(logits_s2t.view(-1, self.num_labels), labels.view(-1))
-            if t_labels is not None:
-#                 if conf_mask is None:
-                if self.num_labels == 1:
-                    # If  We are doing regression
-                    loss_fct = MSELoss()
-                    t_loss = loss_fct(logits_t.view(-1), t_labels.view(-1))
-                else:
-                    loss_fct = CrossEntropyLoss(reduction = 'none')
-                    t_loss = loss_fct(logits_s2t.view(-1, self.num_labels), t_labels.view(-1))
-                    t_loss =  torch.mean(t_loss*conf_mask,dim =0, keepdim = False) ## Consider only High Confidence points
-                loss = [s2t_loss,t_loss] # returs both s2tloss and t_loss
-        else:
-            if labels is not None:
-                if self.num_labels == 1:
-                    #  We are doing regression
-                    loss_fct = MSELoss()
-                    t_loss = loss_fct(logits.view(-1), s_labels.view(-1))
-                else:
-                    loss_fct = CrossEntropyLoss()
-                    t_loss = loss_fct(logits_t.view(-1, self.num_labels), labels.view(-1))
-                loss = t_loss
-                
-        if return_dict:
-            return sfdaNegationClassifierOutput(
-                loss=loss,
-                logits=logits_t,
+                loss_fct = CrossEntropyLoss()
+                masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+
+            if not return_dict:
+                output = (prediction_scores,) + outputs[2:]
+                return ((masked_lm_loss,) + output) if masked_lm_loss is not None else output
+
+            return MaskedLMOutput(
+                loss=masked_lm_loss,
+                logits=prediction_scores,
                 hidden_states=outputs.hidden_states,
                 attentions=outputs.attentions,
-                last_hidden_state = outputs[0]
             )
+            
         else:
-            return sfdaNegationClassifierOutput(
-                loss=loss,
-                logits=logits_t,
-                hidden_states=None,
-                attentions=outputs.attentions,
-                last_hidden_state = outputs[0]
-            )
+            logits_t = self.classifier_t(sequence_output) #logits of the target classifier
+            logits_s2t = self.classifier_s2t(sequence_output) #logits of s2t classifier for maintaining sanity
+
+            loss = None
+                        
+            if prototype_p is not None: 
+                t_labels,conf_mask = compute_plabel_and_conf(prototype_p,prototype_f,outputs[0][:,0,:],cf_ratio)
+                if labels is not None:
+                    if self.num_labels == 1:
+                        #  I fWe are doing regression
+                        loss_fct = MSELoss()
+                        s2t_loss = loss_fct(logits.view(-1), s_labels.view(-1))
+                    else:
+                        loss_fct = CrossEntropyLoss()
+                        s2t_loss = loss_fct(logits_s2t.view(-1, self.num_labels), labels.view(-1))
+                if t_labels is not None:
+    #                 if conf_mask is None:
+                    if self.num_labels == 1:
+                        # If  We are doing regression
+                        loss_fct = MSELoss()
+                        t_loss = loss_fct(logits_t.view(-1), t_labels.view(-1))
+                    else:
+                        loss_fct = CrossEntropyLoss(reduction = 'none')
+                        t_loss = loss_fct(logits_s2t.view(-1, self.num_labels), t_labels.view(-1))
+                        t_loss =  torch.mean(t_loss*conf_mask,dim =0, keepdim = False) ## Consider only High Confidence points
+                    loss = [s2t_loss,t_loss] # returs both s2tloss and t_loss
+            else:
+                if labels is not None:
+                    if self.num_labels == 1:
+                        #  We are doing regression
+                        loss_fct = MSELoss()
+                        t_loss = loss_fct(logits.view(-1), s_labels.view(-1))
+                    else:
+                        loss_fct = CrossEntropyLoss()
+                        t_loss = loss_fct(logits_t.view(-1, self.num_labels), labels.view(-1))
+                    loss = t_loss
+      
+            if return_dict:
+                return sfdaNegationClassifierOutput(
+                    loss=loss,
+                    logits=logits_t,
+                    hidden_states=outputs.hidden_states,
+                    attentions=outputs.attentions,
+                    last_hidden_state = outputs[0]
+                )
+            else:
+                return sfdaNegationClassifierOutput(
+                    loss=loss,
+                    logits=logits_t,
+                    hidden_states=None,
+                    attentions=outputs.attentions,
+                    last_hidden_state = outputs[0]
+                )
     
     ########################################################################################
     ########################################################################################

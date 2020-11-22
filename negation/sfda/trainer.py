@@ -216,7 +216,7 @@ class sfdaTrainer(Trainer):
             inputs = self._prepare_inputs(inputs)
 
             with torch.no_grad():
-                outputs = model(**inputs)
+                outputs = model(**inputs, train_mode = "sfda")
     #                     print(outputs)
                 loss = outputs.loss
                 logits = outputs.logits
@@ -268,7 +268,7 @@ class sfdaTrainer(Trainer):
             """
             prototype_p = torch.Tensor(self.prototype_p).to(self.args.device)
             prototype_f = torch.Tensor(self.prototype_f).to(self.args.device)
-            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f,cf_ratio = self.cf_ratio )
+            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f,cf_ratio = self.cf_ratio , train_mode = "sfda")
             # Save past state if it exists
             if self.args.past_index >= 0:
                 self._past = outputs[self.args.past_index]
