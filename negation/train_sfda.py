@@ -114,7 +114,7 @@ class sfdaTrainingArguments:
     alpha_routine: str = field(
         default="exp", metadata={"help": "The alpha update startegy. Choose from \"exp\" : Exponential routine, \"sqr\" : Square routine , \"lin\": Linear routine,, \"cube\": Cube routine "}
     )
-    mlm_pretrain: bool = field(
+    do_mlm: bool = field(
         default=False, metadata={"help": "Choose if you want to perform MLM pretraining"}
     )
     mlm_lr: float = field(
@@ -179,7 +179,8 @@ def main():
     ######  ----->      MLM Pretraining      <-----  ######
     
     MLM_path = os.path.join(training_args.output_dir,F"MLM{sfda_args.mlm_lr}")
-    
+    training_args.output_dir = MLM_path
+
     if (
         os.path.exists(MLM_path)
         and os.listdir(MLM_path)
@@ -222,8 +223,8 @@ def main():
 
     ######  ------>      SFDA Training      <------  ######
     
-    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}/")
-    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda_{sfda_args.top_k}.csv")
+    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}-cf_ratio{sfda_args.cf_ratio}/")
+    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda.tsv")
     logger.info(save_path)
     
     train_dataset = sfdaNegationDataset.from_tsv(data_args.train_file, data_args.train_pred,tokenizer)
