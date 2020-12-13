@@ -22,10 +22,12 @@ class sfdaTrainer(Trainer):
         def __init__(
         self,
         sfda_args = None,
+        train_mode = "sfda",
         **kwargs,
     ):
             super(sfdaTrainer,self).__init__(**kwargs)
             
+            self.train_mode = train_mode
             if sfda_args is not None:
                 self.prototype_p,self.prototype_f =  None, None
                 self.update_freq  = sfda_args.update_freq
@@ -216,7 +218,7 @@ class sfdaTrainer(Trainer):
             inputs = self._prepare_inputs(inputs)
 
             with torch.no_grad():
-                outputs = model(**inputs, train_mode = "sfda")
+                outputs = model(**inputs, train_mode = self.train_mode)
     #                     print(outputs)
                 loss = outputs.loss
                 logits = outputs.logits
@@ -268,7 +270,7 @@ class sfdaTrainer(Trainer):
             """
             prototype_p = torch.Tensor(self.prototype_p).to(self.args.device)
             prototype_f = torch.Tensor(self.prototype_f).to(self.args.device)
-            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f,cf_ratio = self.cf_ratio , train_mode = "sfda")
+            outputs = model(**inputs,prototype_p = prototype_p  ,prototype_f = prototype_f,cf_ratio = self.cf_ratio , train_mode =self.train_mode)
             # Save past state if it exists
             if self.args.past_index >= 0:
                 self._past = outputs[self.args.past_index]

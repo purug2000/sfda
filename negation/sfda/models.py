@@ -420,7 +420,21 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
                 hidden_states=outputs.hidden_states,
                 attentions=outputs.attentions,
             )
-            
+
+        elif train_mode == "fine_tune":
+            logits_t = self.classifier_t(sequence_output) #logits of the target classifier
+            logits_s2t = self.classifier_s2t(sequence_output) #logits of s2t classifier for maintaining sanity
+
+            loss = None
+                        
+            if labels is not None:
+                if self.num_labels == 1:
+                    #  I fWe are doing regression
+                    loss_fct = MSELoss()
+                    loss = loss_fct(logits.view(-1), s_labels.view(-1))
+                else:
+                    loss_fct = CrossEntropyLoss()
+                    loss = loss_fct(logits_s2t.view(-1, self.num_labels), labels.view(-1)) + loss_fct(logits_t.view(-1, self.num_labels), labels.view(-1))
         else:
             logits_t = self.classifier_t(sequence_output) #logits of the target classifier
             logits_s2t = self.classifier_s2t(sequence_output) #logits of s2t classifier for maintaining sanity
@@ -459,22 +473,22 @@ class sfdaTargetRobertaNegation(RobertaPreTrainedModel):
                         t_loss = loss_fct(logits_t.view(-1, self.num_labels), labels.view(-1))
                     loss = t_loss
       
-            if return_dict:
-                return sfdaNegationClassifierOutput(
-                    loss=loss,
-                    logits=logits_t,
-                    hidden_states=outputs.hidden_states,
-                    attentions=outputs.attentions,
-                    last_hidden_state = outputs[0]
-                )
-            else:
-                return sfdaNegationClassifierOutput(
-                    loss=loss,
-                    logits=logits_t,
-                    hidden_states=None,
-                    attentions=outputs.attentions,
-                    last_hidden_state = outputs[0]
-                )
+        if return_dict:
+            return sfdaNegationClassifierOutput(
+                loss=loss,
+                logits=logits_t,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+                last_hidden_state = outputs[0]
+            )
+        else:
+            return sfdaNegationClassifierOutput(
+                loss=loss,
+                logits=logits_t,
+                hidden_states=None,
+                attentions=outputs.attentions,
+                last_hidden_state = outputs[0]
+            )
     
     ########################################################################################
     ########################################################################################
