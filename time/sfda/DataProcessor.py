@@ -20,7 +20,7 @@ from spacy.lang.en import English
 
 # New parent class 
 @dataclass(frozen=True)
-class Sfda_InputFeatures:
+class sfdaInputFeatures:
     input_ids: List[int]
     attention_mask: Optional[List[int]] = None
     token_type_ids: Optional[List[int]] = None
@@ -29,7 +29,7 @@ class Sfda_InputFeatures:
 
 
 # New class for dataloader
-class Sfda_TimexInputFeatures(Sfda_InputFeatures):
+class sfdaTimexInputFeatures(sfdaInputFeatures):
 
     def __init__(self, input_ids, attention_mask, offset_mapping, label, label_p):
         super().__init__(input_ids=input_ids, attention_mask=attention_mask, label=label, label_p = label_p)
@@ -100,7 +100,7 @@ class Sfda_TimexInputFeatures(Sfda_InputFeatures):
 
 
 # New class for dataset
-class Sfda_TimexDataset(Dataset):
+class sfdaTimexDataset(Dataset):
 
     def __init__(self, doc_indices, features):
         self.doc_indices = doc_indices
@@ -190,7 +190,7 @@ class Sfda_TimexDataset(Dataset):
 
             sent_offset = 0
             for sent_idx, _ in enumerate(input_data["input_ids"]):
-                features.append(Sfda_TimexInputFeatures.from_sentence(
+                features.append(sfdaTimexInputFeatures.from_sentence(
                     input_data,
                     sent_idx,
                     sent_offset,

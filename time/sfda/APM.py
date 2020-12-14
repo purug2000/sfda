@@ -2,13 +2,14 @@ import time
 import numpy as np
 from scipy.special import softmax
 from .utils import compute_plabel_and_conf
-
+import logging
 
 logger = logging.getLogger(__name__)
 
 
 def APM_update(prediction_dict, num_labels, flag = "top_k", thresh_arr = None, k = 500, cf_ratio = 1.0): 
     start_time = time.time()
+    print(prediction_dict.feat_matrix.shape)
     feat_matrix = prediction_dict.feat_matrix.reshape(-1, 768) # N x 768
     # values = torch.from_numpy(prediction_dict.predictions.reshape(-1,num_labels)) # N x num_labels
     # values = values.reshape(-1,1, num_labels).squeeze()
@@ -27,9 +28,9 @@ def APM_update(prediction_dict, num_labels, flag = "top_k", thresh_arr = None, k
             num_prototypes += prototypes[i].shape[0]
             logger.info(F"Number of Prototypes for class {i}:{prototypes[i].shape[0]}    ")
 
-        _,conf_mask =  compute_plabel_and_conf(prototypes, torch.Tensor(feat_matrix), num_labels, cf_ratio)
-        print(F"Conf_mask {conf_mask.float().sum()} / {feat_matrix.shape[0]}")
-        print(F"{conf_mask}")
+        # _,conf_mask =  compute_plabel_and_conf(prototypes, torch.Tensor(feat_matrix), num_labels, cf_ratio)
+        # print(F"Conf_mask {conf_mask.float().sum()} / {feat_matrix.shape[0]}")
+        # print(F"{conf_mask}")
 
         return prototypes, num_prototypes
 
@@ -49,9 +50,9 @@ def APM_update(prediction_dict, num_labels, flag = "top_k", thresh_arr = None, k
             num_prototypes += prototypes[i].shape[0]
             logger.info(F"Number of Prototypes for class {i}:{prototypes[i].shape[0]}    ")
 
-         _,conf_mask =  compute_plabel_and_conf(prototypes, torch.Tensor(feat_matrix), num_labels, cf_ratio)
-        print(F"Conf_mask {conf_mask.float().sum()} / {feat_matrix.shape[0]}")
-        print(F"{conf_mask}")
+        #  _,conf_mask =  compute_plabel_and_conf(prototypes, torch.Tensor(feat_matrix), num_labels, cf_ratio)
+        # print(F"Conf_mask {conf_mask.float().sum()} / {feat_matrix.shape[0]}")
+        # print(F"{conf_mask}")
 
         return prototypes, num_prototypes
 
