@@ -8,5 +8,6 @@ python sfda/negation/train_sfda.py --train_file sfda/negation/practice_text/trai
 --APM_Strategy "top_k" \
 --top_k 100 \
 --alpha_routine "sqr" \
---cf_ratio 20 \
+--cf_ratio 10 \
+--do_mlm \
 --mlm_lr 5e-6 
