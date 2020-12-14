@@ -222,16 +222,21 @@ class sfdaTrainer(Trainer):
 
             with torch.no_grad():
                 outputs = model(**inputs, train_mode = "sfda")
-    #                     print(outputs)
-                # loss = outputs.loss_t
-                # print(F"\n attn : {inputs['attention_mask'].view(-1).shape}")
-                logits = outputs.logits[inputs["attention_mask"] == 1,:]
-                # print(F"\nlogits : {logits.shape}")
-    #                     print(outputs.last_hidden_state.shape)
-                feats = outputs.last_hidden_state[inputs["attention_mask"] == 1,:].detach()
-                # print(F"feats : {feats.shape}")
-                labels = None
+                feats = None
                 loss = None
+                labels =None
+                if ret_feats:
+                  logits = outputs.logits[inputs["attention_mask"] == 1,:]
+                  feats = outputs.last_hidden_state[inputs["attention_mask"] == 1,:].detach()
+                else:
+                  logits = outputs.logits
+                # print(F"feats : {feats.shape}")
+                if has_labels:
+                    # The .mean() is to reduce in case of distributed training
+                  # loss = loss.mean().item()
+                  labels = tuple(inputs.get(name).detach() for name in self.args.label_names)
+                  if len(labels) == 1:
+                      labels = labels[0]
                 return (loss, logits, labels, feats)
         def training_step(self, model: nn.Module, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
             

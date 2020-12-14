@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<data><annotations><entity><id>0@CNN_20130321_821</id><span>20,25</span><type>Month-Of-Year</type></entity><entity><id>1@CNN_20130321_821</id><span>26,28</span><type>Day-Of-Month</type></entity><entity><id>2@CNN_20130321_821</id><span>30,34</span><type>Year</type></entity></annotations></data>

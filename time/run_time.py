@@ -13,17 +13,47 @@ from transformers import (
 )
 from spacy.lang.en import English
 import anafora
+from sfda.DataProcessor import sfdaTimexDataset
+from sfda.models import sfdaRobertaForTokenClassification
+from sfda.trainer import sfdaTrainer
+from dataclasses import dataclass, field
+from typing import Callable, Dict, Optional, List, Union
+@dataclass
+class sfdaTrainingArguments:
+    APM_Strategy: str = field(
+        default="top_k", metadata={"help": "APM update strategy, use top_k for updating APM with top_k from each label and thresh for specifying it with a threshold score."}
+    )
+    top_k: int = field(
+        default=100, metadata={"help": "[For top_k APM update strategy], the number of prototypes extracted for each label"}
+    )
+    cf_ratio: float = field(
+        default=1.0, metadata={"help": "The minimum ratio of min similarity  of  the closest class to the max similarity point of the farthest class to be eligible for consideration as High Confidence point"}
+    )
+    update_freq: int = field(
+        default = 100,
+        metadata={"help": "The number of global steps after which  APM prototypes are updated "}
+    )
+    alpha_routine: str = field(
+        default="exp", metadata={"help": "The alpha update startegy. Choose from \"exp\" : Exponential routine, \"sqr\" : Square routine , \"lin\": Linear routine,, \"cube\": Cube routine "}
+    )
+    do_mlm: bool = field(
+        default=False, metadata={"help": "Choose if you want to perform MLM pretraining"}
+    )
+    mlm_lr: float = field(
+        default=5e-6, metadata={"help": "Specify learning rate for MLM training"}
+    )
 
 
 def predict(predict_dir, output_dir):
 
     # load the Huggingface config, tokenizer, and model
-    model_name = "clulab/roberta-timex-semeval"
+    sfda_args = sfdaTrainingArguments()
+    model_name = "../outputs/time"
     config = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               config=config,
                                               use_fast=True)
-    model = AutoModelForTokenClassification.from_pretrained(model_name,
+    model = sfdaRobertaForTokenClassification.from_pretrained(model_name,
                                                             config=config)
 
     # load the spacy sentence segmenter
@@ -34,17 +64,19 @@ def predict(predict_dir, output_dir):
     dataset = TimexDataset.from_texts(predict_dir, nlp, tokenizer)
 
     # get predictions from the torch model
-    trainer = Trainer(
+    trainer = sfdaTrainer(
+        num_labels = config.num_labels,
+        sfda_args = sfda_args,
         model=model,
         args=TrainingArguments("save_run/"),
         data_collator=lambda features: dict(
             input_ids=torch.stack([f.input_ids for f in features]),
             attention_mask=torch.stack([f.attention_mask for f in features]))
     )
-    predictions, _, _ = trainer.predict(dataset)
-
+    prediction_dict = trainer.predict(dataset)
+    print(prediction_dict.predictions.shape)
     # write the predictions in Anafora XML format
-    write_anafora(output_dir, dataset, predictions, tokenizer, config)
+    write_anafora(output_dir, dataset, prediction_dict.predictions, tokenizer, config)
 
 
 class TimexInputFeatures(InputFeatures):
