@@ -28,7 +28,7 @@ from sfda.trainer import sfdaTrainer
 from sfda.DataProcessor import sfdaNegationDataset
 from sfda.DataProcessor import NegationDataset
 from datasets import load_dataset
-    
+import shutil
 
 
 @dataclass
@@ -187,17 +187,39 @@ def main():
         if (
             os.path.exists(MLM_path)
             and os.listdir(MLM_path)
-            and not training_args.overwrite_output_dir
         ):
-            logger.warning(
-                f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overwrite, loading model-weigths from the directory for now."
-            )
-            model = sfdaTargetRobertaNegation.from_pretrained(
-                MLM_path,
-                from_tf=bool(".ckpt" in model_args.src_model_name_or_pth),
-                config=config,
-                cache_dir=model_args.cache_dir,
-            )
+            
+            if not training_args.overwrite_output_dir :
+                logger.warning(
+                    f"Output directory ({training_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overwrite, loading model-weights from the directory for now."
+                )
+                model = sfdaTargetRobertaNegation.from_pretrained(
+                    MLM_path,
+                    from_tf=bool(".ckpt" in model_args.src_model_name_or_pth),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                )
+            else:
+                shutil.rmtree(MLM_path)
+                logger.warning(F"Removed {MLM_path}")
+                dataset = load_dataset("text", data_files=  data_args.train_file)
+                def tokenize_function(examples):
+                    return tokenizer(examples["text"], return_special_tokens_mask=True)
+                tokenized_dataset = dataset.map(
+                        tokenize_function,
+                        batched=True,
+                        num_proc=None,
+                    )
+                data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.3)
+                trainer_mlm = Trainer(
+                    model=model,
+                    args=TrainingArguments(output_dir = MLM_path ,learning_rate = sfda_args.mlm_lr),
+                    compute_metrics=build_compute_metrics_fn(),
+                    train_dataset = tokenized_dataset["train"],
+                    data_collator = data_collator
+                )
+                logger.info("Performing MLM pretraining")
+                trainer_mlm.train()            
         else:
             dataset = load_dataset("text", data_files=  data_args.train_file)
             def tokenize_function(examples):
@@ -206,8 +228,6 @@ def main():
                     tokenize_function,
                     batched=True,
                     num_proc=None,
-        #             remove_columns=[text_column_name],
-        #             load_from_cache_file=not data_args.overwrite_cache,
                 )
             data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm_probability=0.3)
             trainer_mlm = Trainer(
@@ -238,41 +258,51 @@ def main():
         )
         trainer.train()
         trainer.save_model()
-
-    ######  <------------------------------------->  ######
-
-    ######  ------>      SFDA Training      <------  ######
-    
-    training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}-cf_ratio{sfda_args.cf_ratio}/")
-    save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda.tsv")
-    logger.info(save_path)
-    train_dataset = sfdaNegationDataset.from_tsv(data_args.train_file, data_args.train_pred,tokenizer)
-    eval_dataset = sfdaNegationDataset.from_tsv(data_args.eval_file, data_args.eval_pred,tokenizer)
-        
-    trainer = sfdaTrainer(
-        model=model,
-        args=training_args,
-        sfda_args = sfda_args,
-        compute_metrics=build_compute_metrics_fn(),
-        train_dataset = train_dataset,
-        eval_dataset = eval_dataset,
-    )
-    
-    if (
-        os.path.exists(training_args.output_dir)
-        and os.listdir(training_args.output_dir)
-        and not training_args.overwrite_output_dir
-    ):
-        logger.warning(
-            f"Output directory ({training_args.output_dir}) already exists and is not empty. Attempting to load pre-trained weights from dir. Use --overwrite_output_dir to overwrite."
-        )
-    
     else:
-        trainer.train()
-        trainer.save_model()
+        ######  <------------------------------------->  ######
+
+        ######  ------>      SFDA Training      <------  ######
+    
+        training_args.output_dir = os.path.join(training_args.output_dir,F"top-{sfda_args.top_k}-cf_ratio{sfda_args.cf_ratio}/")
+        save_path = os.path.join(training_args.output_dir,F"dev_pred_sfda.tsv")
+        logger.info(save_path)
+        train_dataset = sfdaNegationDataset.from_tsv(data_args.train_file, data_args.train_pred,tokenizer)
+        eval_dataset = sfdaNegationDataset.from_tsv(data_args.eval_file, data_args.eval_pred,tokenizer)
+            
+        trainer = sfdaTrainer(
+            model=model,
+            args=training_args,
+            sfda_args = sfda_args,
+            compute_metrics=build_compute_metrics_fn(),
+            train_dataset = train_dataset,
+            eval_dataset = eval_dataset,
+        )
+        
+        if (
+            os.path.exists(training_args.output_dir)
+            and os.listdir(training_args.output_dir)
+        ):
+
+            if not training_args.overwrite_output_dir:
+                logger.warning(
+                    f"Output directory ({training_args.output_dir}) already exists and is not empty. Attempting to load pre-trained weights from dir. Use --overwrite_output_dir to overwrite."
+                )
+                model = sfdaTargetRobertaNegation.from_pretrained(
+                    training_args.output_dir,
+                    from_tf=bool(".ckpt" in model_args.src_model_name_or_pth),
+                    config=config,
+                    cache_dir=model_args.cache_dir,
+                )
+            else:
+                shutil.rmtree(training_args.output_dir)
+                trainer.train()
+                trainer.save_model()  
+        else:
+            trainer.train()
+            trainer.save_model()
     
     
-    ######  <------------------------------------->  ######
+        ######  <------------------------------------->  ######
     
 
     ######  ------>        Evaluation       <------  ######
@@ -307,3 +337,4 @@ def _mp_fn(index):
 if __name__ == "__main__":
     main()
     
+

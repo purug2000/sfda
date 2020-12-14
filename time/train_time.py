@@ -17,6 +17,8 @@ from sfda.models import sfdaRobertaForTokenClassification
 from sfda.trainer import sfdaTrainer
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, List, Union
+import shutil
+
 @dataclass
 class sfdaTrainingArguments:
     APM_Strategy: str = field(
@@ -26,7 +28,7 @@ class sfdaTrainingArguments:
         default=100, metadata={"help": "[For top_k APM update strategy], the number of prototypes extracted for each label"}
     )
     cf_ratio: float = field(
-        default=1.0, metadata={"help": "The minimum ratio of min similarity  of  the closest class to the max similarity point of the farthest class to be eligible for consideration as High Confidence point"}
+        default=0, metadata={"help": "The minimum ratio of min similarity  of  the closest class to the max similarity point of the farthest class to be eligible for consideration as High Confidence point"}
     )
     update_freq: int = field(
         default = 100,
@@ -57,6 +59,12 @@ def train(data_dir, anno_dir,anno_dir_p, save_dir):
     # load the spacy sentence segmenter
     nlp = English()
     nlp.add_pipe(nlp.create_pipe("sentencizer"))
+    if (
+        os.path.exists(save_dir)
+        and os.listdir(save_dir)
+    ):
+        shutil.rmtree(save_dir)
+        print(F"Removed {save_dir}")
 
     # create a torch dataset from a directory of Anafora XML annotations and text files
     dataset = sfdaTimexDataset.from_texts(data_dir, anno_dir,anno_dir_p, nlp, tokenizer, config)
