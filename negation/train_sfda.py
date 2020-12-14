@@ -219,7 +219,8 @@ def main():
                     data_collator = data_collator
                 )
                 logger.info("Performing MLM pretraining")
-                trainer_mlm.train()            
+                trainer_mlm.train()
+                trainer_mlm.save_model()            
         else:
             dataset = load_dataset("text", data_files=  data_args.train_file)
             def tokenize_function(examples):
@@ -239,6 +240,7 @@ def main():
             )
             logger.info("Performing MLM pretraining")
             trainer_mlm.train()
+            trainer_mlm.save_model()            
     
         
     ######  <------------------------------------->  ######
@@ -289,10 +291,17 @@ def main():
                 )
                 model = sfdaTargetRobertaNegation.from_pretrained(
                     training_args.output_dir,
-                    from_tf=bool(".ckpt" in model_args.src_model_name_or_pth),
                     config=config,
-                    cache_dir=model_args.cache_dir,
                 )
+                trainer = sfdaTrainer(
+                  model=model,
+                  args=training_args,
+                  sfda_args = sfda_args,
+                  compute_metrics=build_compute_metrics_fn(),
+                  train_dataset = train_dataset,
+                  eval_dataset = eval_dataset,
+              )
+              
             else:
                 shutil.rmtree(training_args.output_dir)
                 trainer.train()
