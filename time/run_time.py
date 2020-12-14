@@ -44,11 +44,11 @@ class sfdaTrainingArguments:
     )
 
 
-def predict(predict_dir, output_dir):
+def predict(predict_dir, model_dir, output_dir):
 
     # load the Huggingface config, tokenizer, and model
     sfda_args = sfdaTrainingArguments()
-    model_name = "../outputs/time"
+    model_name = model_dir
     config = AutoConfig.from_pretrained(model_name)
     tokenizer = AutoTokenizer.from_pretrained(model_name,
                                               config=config,
@@ -212,8 +212,10 @@ if __name__ == "__main__":
 
     parser.add_argument("-p", "--predict", metavar="DIR", dest="predict_dir",
                         help="The root of the directory tree containing raw text for prediction.")
+    parser.add_argument("-m", "--model", metavar="DIR", dest="model_dir",
+                        help="The model save directory or name")
     parser.add_argument("-o", "--output", metavar="DIR", dest="output_dir",
                         help="The directory to store the prediction in Anafora XML.")
     args = parser.parse_args()
-    predict(args.predict_dir, args.output_dir)
+    predict(args.predict_dir, args.model_dir, args.output_dir)
 

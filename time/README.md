@@ -5,5 +5,5 @@ python train_time.py -t practice_text/ -a ../practice_data/ref/time/ -s ../outpu
 ```
 For prediction 
 ```bash
-python run_time.py -p practice_text/ -o ../practice_data/res/time
+python run_time.py -p practice_text/ -o ../practice_data/res/time -m ../outputs/time
 ```
